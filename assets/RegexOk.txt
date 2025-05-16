@@ -1,0 +1,42 @@
+use clap::{App, Arg};
+use regex::Regex;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+
+fn main() {
+    let matches = App::new("Origin Checker")
+        .version("1.0")
+        .author("Your Name")
+        .about("Checks for origin patterns in files")
+        .arg(
+            Arg::with_name("file")
+                .help("The file to check")
+                .required(true)
+                .index(1),
+        )
+        .get_matches();
+
+    let file_path = matches.value_of("file").unwrap();
+    let file = File::open(file_path).expect("Unable to open file");
+    let reader = BufReader::new(file);
+
+    let pattern = Regex::new(r"\[ k = Origin\s+\r?\n?4b\.02, l =\s+\d+\s+\(\d+\) \]\s+\r?\n?\s+\d+\s+([0-9a-fA-F]{2}(?: [0-9a-fA-F]{2}){7})").unwrap();
+
+    for line in reader.lines() {
+        let line = line.expect("Unable to read line");
+        if let Some(caps) = pattern.captures(&line) {
+            let digits = caps.get(1).unwrap().as_str();
+            let digits_vec: Vec<&str> = digits.split_whitespace().collect();
+            let all_zero = digits_vec.iter().all(|&d| d == "00");
+
+            if all_zero {
+                println!("No origin");
+            } else {
+                println!("With origin");
+            }
+            return;
+        }
+    }
+
+    println!("Pattern not found");
+}
