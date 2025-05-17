@@ -105,10 +105,10 @@ fn main() -> io::Result<()> {
                     // Print regex matches
                     println!("\n--- Looking for Origin/Precharge ---");
                     if stdout_matches.is_empty() {
-                        println!("No matches found for the Origin,Precharge pattern.");
+                        println!("No matches found for the Origin,Precharge pattern.\n");
                     } else {
                         let total_matches = stdout_matches.len();
-                        println!("Found {} match(es) for Origin,Precharge pattern:", total_matches);
+                        println!("Found {} match(es) for Origin, Precharge pattern.\n", total_matches);
                         
                         if verbose {
                             if !stdout_matches.is_empty() {
