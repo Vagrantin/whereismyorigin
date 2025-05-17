@@ -37,25 +37,18 @@ fn main() -> io::Result<()> {
 			
     println!("Running the folder scan, for MXF files...");
     scan::scandir(videofolderpath, verbose);
-    println!("Running mxfdump.exe with provided arguments...");
 
     // Initialize the sled database
     let db = Config::new()
         .path("./file_paths_db")
         .open()
         .unwrap();
-    //Iter over the DB
-    //Get the key
-    //pass the key to the mxfdump binary
-    //and until the end of the db.
-    //Confirm that I check correctly the key exist when scan and not the bool.
-    //conversion from b64 to string.
-    //init db with all false
 
     // Create command to execute mxfdump.exe
     let mut cmd = Command::new("./bin/mxfdump.exe");
 
     println!("\nIterating over all entries in DB...");
+    println!("Running mxfdump.exe with provided arguments...");
     for result in db.iter() {
         match result {
             Ok((key_bytes, _value_bytes)) => {
@@ -67,7 +60,9 @@ fn main() -> io::Result<()> {
                         }
                         Err(e) => eprintln!("Error decoding {} : {}", &videofilepathb64, e)
                     }
-                    println!("This is the path I got: {}",&videofilepath);
+                    if verbose {
+                        println!("This is the path I got: {}",&videofilepath);
+                    }
                     // Configure to capture stdout and stderr
                     let mut child = cmd
             	    	.arg(&videofilepath)
@@ -75,7 +70,6 @@ fn main() -> io::Result<()> {
                         .stderr(Stdio::piped())
                         .spawn()?;
                     
-                    println!("This is the path I got: {}",&videofilepath);
                     // Extract stdout and stderr handles
                     let stdout = child.stdout.take().expect("Failed to capture stdout");
                     let stderr = child.stderr.take().expect("Failed to capture stderr");
@@ -104,7 +98,9 @@ fn main() -> io::Result<()> {
                     
                     // Wait for the process to complete
                     let status = child.wait()?;
-                    println!("\nExit status: {}", status);
+                    if verbose {
+                        println!("\nExit status: {}", status);
+                    }
                     
                     // Print regex matches
                     println!("\n--- REGEX PARSING RESULTS ---");
@@ -121,7 +117,7 @@ fn main() -> io::Result<()> {
                             }
                         }
                     }
-                    println!("my key {videofilepath}")
+                    //println!("my key {videofilepath}")
                 } else {
                     eprintln!("couldn't decode the key");
                 }
