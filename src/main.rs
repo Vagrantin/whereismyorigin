@@ -84,13 +84,13 @@ fn main() -> io::Result<()> {
                         }
                     };
                     
-                    println!("\n--- PROCESSING STDOUT ---");
+                    //println!("\n--- PROCESSING MXFDump output ---");
                     // Process stdout in chunks, piping to standard output
                     let mut stdout_matches = Vec::new();
                     process_output(BufReader::new(stdout), true, &regex, &mut stdout_matches, &videofilepath, verbose, &db)?;
             	    
                     if mxferror {
-            	    	println!("\n--- PROCESSING STDERR ---");
+            	    	println!("\n--- PROCESSING MXFDump Error output ---");
             	    	// Process stderr in chunks, piping to standard error
             	    	let mut stderr_matches = Vec::new();
             	    	process_output(BufReader::new(stderr), false, &regex, &mut stderr_matches, &videofilepath, verbose, &db)?;
@@ -103,17 +103,19 @@ fn main() -> io::Result<()> {
                     }
                     
                     // Print regex matches
-                    println!("\n--- REGEX PARSING RESULTS ---");
+                    println!("\n--- Looking for Origin/Precharge ---");
                     if stdout_matches.is_empty() {
-                        println!("No matches found for the Origin pattern.");
+                        println!("No matches found for the Origin,Precharge pattern.");
                     } else {
                         let total_matches = stdout_matches.len();
-                        println!("Found {} match(es) for Origin pattern:", total_matches);
+                        println!("Found {} match(es) for Origin,Precharge pattern:", total_matches);
                         
-                        if !stdout_matches.is_empty() {
-                            println!("\nMatches from STDOUT:");
-                            for (idx, m) in stdout_matches.iter().enumerate() {
-                                println!("Match #{}: {}", idx + 1, m);
+                        if verbose {
+                            if !stdout_matches.is_empty() {
+                                println!("\nMatches from MXFDump output:");
+                                for (idx, m) in stdout_matches.iter().enumerate() {
+                                    println!("Match #{}: {}", idx + 1, m);
+                                }
                             }
                         }
                     }
