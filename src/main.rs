@@ -84,7 +84,7 @@ fn main() -> io::Result<()> {
                         }
                     };
                     
-                    //println!("\n--- PROCESSING MXFDump output ---");
+                    println!("\n--- PROCESSING MXFDump output ---");
                     // Process stdout in chunks, piping to standard output
                     let mut stdout_matches = Vec::new();
                     process_output(BufReader::new(stdout), true, &regex, &mut stdout_matches, &videofilepath, verbose, &db)?;
@@ -147,7 +147,7 @@ fn process_output<R: Read>(
     let mut leftover = String::new();
     let mut buffer = [0; CHUNK_SIZE];
     
-	print!("Processing {}", &videofilepath);
+	println!("Processing {}", &videofilepath);
     // Read and process in chunks
     loop {
         let bytes_read = reader.read(&mut buffer)?;
