@@ -1,42 +1,50 @@
 use std::env;
 use std::process::{Command, Stdio};
 use std::io::{self, Read, BufReader};
+use std::thread;
+use std::sync::mpsc;
 use regex::Regex;
-use sled::{Config,Db};
+use sled::Config;
 
 mod scan;
-mod youkyouk;
 
-// Size of chunks to read (8 kB)
-const CHUNK_SIZE: usize = 8192;
+// Size of buffer for reading (smaller chunks to avoid memory issues)
+const BUFFER_SIZE: usize = 8192;
+// Size of the sliding window buffer for regex matching
+const WINDOW_SIZE: usize = 512;
 
 fn main() -> io::Result<()> {
     let mut videofilepath: String = "".to_string();  
 
     // Get command line arguments, excluding the program name
     let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]", args[0]);
+        return Ok(());
+    }
+    
     let videofolderpath = &args[1];
-	let mut verbose = false;
-	let mut mxferror = false;
-	
-	let mut i = 2;
-	while i < args.len() {
-		match args[i].as_str() {
-			"-v" | "--verbose" => {
-				verbose = true;
-				i+=1;
-			}
-			"-e" | "--errors" => {
-				mxferror = true;
-				i+=1;
-			}
-			_ => {
-				i+=1;
-			}
-		}
-	}
-			
-    println!("Running the folder scan, for MXF files...");
+    let mut verbose = false;
+    let mut mxferror = false;
+    
+    let mut i = 2;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-v" | "--verbose" => {
+                verbose = true;
+                i+=1;
+            }
+            "-e" | "--errors" => {
+                mxferror = true;
+                i+=1;
+            }
+            _ => {
+                i+=1;
+            }
+        }
+    }
+            
+    println!("Running the folder scan for MXF files...");
     scan::scandir(videofolderpath, verbose);
 
     // Initialize the sled database
@@ -45,11 +53,12 @@ fn main() -> io::Result<()> {
         .open()
         .unwrap();
 
-    // Create command to execute mxfdump.exe
-    let mut cmd = Command::new("./bin/mxfdump.exe");
-
     println!("\nIterating over all entries in DB...");
     println!("Running mxfdump.exe with provided arguments...");
+    
+    let mut processed_count = 0;
+    let mut found_matches_count = 0;
+    
     for result in db.iter() {
         match result {
             Ok((key_bytes, _value_bytes)) => {
@@ -57,72 +66,39 @@ fn main() -> io::Result<()> {
                     let decodedvideofilepath = decodeb64(&videofilepathb64);
                     match decodedvideofilepath {
                         Ok(val) => {
-                            videofilepath = val
+                            videofilepath = val;
                         }
-                        Err(e) => eprintln!("Error decoding {} : {}", &videofilepathb64, e)
-                    }
-                    if verbose {
-                        println!("This is the path I got: {}",&videofilepath);
-                    }
-                    // Configure to capture stdout and stderr
-                    let mut child = cmd
-            	    	.arg(&videofilepath)
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .spawn()?;
-                    
-                    // Extract stdout and stderr handles
-                    let stdout = child.stdout.take().expect("Failed to capture stdout");
-                    let stderr = child.stderr.take().expect("Failed to capture stderr");
-                    
-                    // Prepare regex pattern
-                    let pattern = r"\[ k = Origin\s+\r?\n?4b\.02, l =\s+\d+\s+\(\d+\) \]\s+\r?\n?\s+\d+\s+([0-9a-fA-F]{2}(?: [0-9a-fA-F]{2}){7})";
-                    let regex = match Regex::new(pattern) {
-                        Ok(re) => re,
                         Err(e) => {
-                            eprintln!("Regex error: {}", e);
-                            return Ok(());
+                            eprintln!("Error decoding {} : {}", &videofilepathb64, e);
+                            continue; // Skip this file
                         }
-                    };
+                    }
                     
-                    println!("\n--- PROCESSING MXFDump output ---");
-                    // Process stdout in chunks, piping to standard output
-                    let mut stdout_matches = Vec::new();
-                    process_output(BufReader::new(stdout), true, &regex, &mut stdout_matches, &videofilepath, verbose, &db)?;
-            	    
-                    if mxferror {
-            	    	println!("\n--- PROCESSING MXFDump Error output ---");
-            	    	// Process stderr in chunks, piping to standard error
-            	    	let mut stderr_matches = Vec::new();
-            	    	process_output(BufReader::new(stderr), false, &regex, &mut stderr_matches, &videofilepath, verbose, &db)?;
-            	    }
-                    
-                    // Wait for the process to complete
-                    let status = child.wait()?;
+                    processed_count += 1;
                     if verbose {
-                        println!("\nExit status: {}", status);
+                        println!("This is the path I got: {}", &videofilepath);
+                    } else if processed_count % 5 == 0 {
+                        println!("Processed {} files so far...", processed_count);
                     }
                     
-                    // Print regex matches
-                    println!("\n--- Looking for Origin/Precharge ---");
-                    if stdout_matches.is_empty() {
-                        println!("No matches found for the Origin,Precharge pattern.\n");
-                    } else {
-                        let total_matches = stdout_matches.len();
-                        println!("Found {} match(es) for Origin, Precharge pattern.\n", total_matches);
+                    println!("Processing {}", &videofilepath);
+                    
+                    // Run the external process with the necessary parameters
+                    let has_match = process_file_with_mxfdump(&videofilepath, verbose, mxferror)?;
+                    
+                    if has_match {
+                        found_matches_count += 1;
+                        // Set the value in the database
+                        let originpresent = true;
+                        let videofilepathb64 = base64::encode(videofilepath.as_bytes());
+                        let _ = db.insert(&videofilepathb64.as_bytes(), originpresent.to_string().as_bytes());
                         
-                        if verbose {
-                            if !stdout_matches.is_empty() {
-                                println!("\nMatches from MXFDump output:");
-                                for (idx, m) in stdout_matches.iter().enumerate() {
-                                    println!("Match #{}: {}", idx + 1, m);
-                                }
-                            }
-                        }
+                        println!("Found Origin/Precharge pattern in: {}", &videofilepath);
+                    } else if verbose {
+                        println!("No Origin/Precharge pattern found in: {}", &videofilepath);
                     }
-                    //println!("my key {videofilepath}")
                 } else {
-                    eprintln!("couldn't decode the key");
+                    eprintln!("Couldn't decode the key");
                 }
             }
             Err(e) => {
@@ -131,78 +107,113 @@ fn main() -> io::Result<()> {
         }
     }
     
+    println!("Processing complete. Processed {} files total.", processed_count);
+    println!("Found Origin/Precharge pattern in {} files.", found_matches_count);
     Ok(())
 }
 
-// Process output stream in chunks, collect regex matches
-fn process_output<R: Read>(
-    mut reader: BufReader<R>, 
-    is_stdout: bool, 
-    regex: &Regex, 
-    matches: &mut Vec<String>,
-	videofilepath: &String,
-	verbose: bool,
-    db: &Db
-) -> io::Result<()> {
-    // For regex matching across chunk boundaries
-    let mut leftover = String::new();
-    let mut buffer = [0; CHUNK_SIZE];
+fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: bool) -> io::Result<bool> {
+    // Create command to execute mxfdump.exe
+    let mut cmd = Command::new("./bin/mxfdump.exe");
+    cmd.arg(file_path);
     
-	println!("Processing {}", &videofilepath);
-    // Read and process in chunks
-    loop {
-        let bytes_read = reader.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break; // End of stream
-        }
+    // Configure to capture stdout and stderr
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    
+    // Spawn the process
+    let mut child = cmd.spawn()?;
+    
+    // Extract stdout and stderr handles
+    let stdout = child.stdout.take().expect("Failed to capture stdout");
+    let stderr = child.stderr.take().expect("Failed to capture stderr");
+    
+    // Create regex pattern for matching
+    let pattern = r"\[ k = Origin\s+\r?\n?4b\.02, l =\s+\d+\s+\(\d+\) \]\s+\r?\n?\s+\d+\s+([0-9a-fA-F]{2}(?: [0-9a-fA-F]{2}){7})";
+    let regex = Regex::new(pattern).expect("Invalid regex pattern");
+    
+    // Create a channel to communicate matches
+    let (tx, rx) = mpsc::channel();
+    
+    // Process stdout in a separate thread - using chunk-based reading for memory efficiency
+    thread::spawn(move || {
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, stdout);
+        let mut buffer = vec![0; BUFFER_SIZE];
+        let mut window = Vec::with_capacity(WINDOW_SIZE);
         
-        // Convert chunk to string, handling UTF-8 errors gracefully
-        let chunk = match std::str::from_utf8(&buffer[0..bytes_read]) {
-            Ok(s) => s,
-            Err(_) => {
-                // Handle invalid UTF-8 (just output the bytes we can)
-                let string = String::from_utf8_lossy(&buffer[0..bytes_read]).to_string();
-                if is_stdout {
-                    print!("{}", string);
-                } else {
-                    eprint!("{}", string);
+        // Read in chunks to minimize memory usage
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break, // End of file
+                Ok(n) => {
+                    // Append new data to the sliding window
+                    window.extend_from_slice(&buffer[0..n]);
+                    
+                    // Convert to string for regex matching (for this portion)
+                    if let Ok(text) = String::from_utf8(window.clone()) {
+                        // Output if verbose
+                        if verbose {
+                            print!("{}", String::from_utf8_lossy(&buffer[0..n]));
+                        }
+                        
+                        // Check for match
+                        if regex.is_match(&text) {
+                            tx.send(true).unwrap_or(());
+                            return;
+                        }
+                    }
+                    
+                    // Trim the window if it's too large, keeping only the tail
+                    if window.len() > WINDOW_SIZE {
+                        window = window.split_off(window.len() - WINDOW_SIZE);
+                    }
                 }
-                continue;
-            }
-        };
-        
-        // Print current chunk
-        if is_stdout {
-			if verbose {
-				print!("{}", chunk);
-			}
-        } else {
-            eprint!("{}", chunk);
-        }
-        
-        // Combine leftover with current chunk for regex matching
-        leftover.push_str(chunk);
-        
-        // Extract regex matches from the combined text
-        for cap in regex.captures_iter(&leftover) {
-            if let Some(hex_value) = cap.get(1) {
-                //maybe we want to stop at first match by default
-                matches.push(hex_value.as_str().to_string());
-                //Set the value of the file path to true ( we have found Origin/Precharge in the MXF )
-                let originpresent = true;
-                let videofilepathb64 = base64::encode(videofilepath.as_bytes());
-                let _ = db.insert(&videofilepathb64.as_bytes(), originpresent.to_string().as_bytes());
+                Err(e) => {
+                    if verbose {
+                        eprintln!("Error reading stdout: {}", e);
+                    }
+                    break;
+                }
             }
         }
         
-        // Keep the last few bytes for the next iteration
-        // This helps with matches that might span chunks
-        if leftover.len() > 80 {
-            leftover = leftover.chars().skip(leftover.len() - 80).collect();
+        // No match found
+        tx.send(false).unwrap_or(());
+    });
+    
+    // Always just drain stderr without checking for regex patterns
+    thread::spawn(move || {
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, stderr);
+        let mut buffer = vec![0; BUFFER_SIZE];
+        
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break, // End of file
+                Ok(n) => {
+                    if verbose && process_errors {
+                        eprint!("{}", String::from_utf8_lossy(&buffer[0..n]));
+                    }
+                }
+                Err(e) => {
+                    if verbose {
+                        eprintln!("Error reading stderr: {}", e);
+                    }
+                    break;
+                }
+            }
         }
+    });
+    
+    // Wait for the process to complete
+    let status = child.wait()?;
+    if verbose {
+        println!("Process exit status: {}", status);
     }
-
-    Ok(())
+    
+    // Get the result from the stdout processing thread
+    let found_match = rx.recv().unwrap_or(false);
+    
+    Ok(found_match)
 }
 
 fn decodeb64(file_path_b64: &String) -> Result<String,String> {
@@ -211,13 +222,13 @@ fn decodeb64(file_path_b64: &String) -> Result<String,String> {
             match String::from_utf8(decoded_bytes){
                 Ok(decoded_string) => Ok(decoded_string),
                 Err(err) => {
-                    eprintln!("Couldn't decode the base64 value as UTF-8 {err}");
+                    eprintln!("Couldn't decode the base64 value as UTF-8 {err}");
                     Err("Invalid UTF-8".to_string())
                 }
             }
         }
         Err(err) => {
-            eprintln!("Couldn't decode the base64 value {err}");
+            eprintln!("Couldn't decode the base64 value {err}");
             Err("Invalid UTF-8".to_string())
         }
     }
