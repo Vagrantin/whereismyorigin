@@ -5,6 +5,7 @@ use regex::Regex;
 use sled::{Config,Db};
 
 mod scan;
+mod youkyouk;
 
 // Size of chunks to read (8 kB)
 const CHUNK_SIZE: usize = 8192;
