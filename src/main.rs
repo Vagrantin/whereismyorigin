@@ -26,7 +26,7 @@ fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]", args[0]);
-        eprintln!("       {} . --report (to generate report only)", args[0]);
+        eprintln!("       {} --report (to generate report only)", args[0]);
         return Ok(());
     }
     
@@ -59,7 +59,7 @@ fn main() -> io::Result<()> {
     //Check for conflicting parameters
     if report_mode && (verbose || mxferror) {
         eprintln!("Report mode cannot be use with other parameters");
-        eprintln!("Usage for report: {} . --report", args[0]);
+        eprintln!("Usage for report: {} --report", args[0]);
         process::exit(0);
     }
 

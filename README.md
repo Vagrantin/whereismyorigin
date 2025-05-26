@@ -50,6 +50,7 @@ whereismyorigin <video_folder_path> [OPTIONS]
 
 - `-v, --verbose` - Enable verbose output showing detailed processing information
 - `-e, --errors` - Enable error output from mxfdump processes
+- `--report` - Generate a report of files with Origin/Precharge patterns found (cannot be used with other options)
 
 ### Examples
 
@@ -62,6 +63,9 @@ whereismyorigin C:\Videos\MXF_Collection --verbose
 
 # With verbose output and error reporting
 whereismyorigin C:\Videos\MXF_Collection --verbose --errors
+
+# Generate report of files with patterns found
+whereismyorigin --report
 ```
 
 ## How It Works
