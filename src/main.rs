@@ -5,6 +5,9 @@ use std::thread;
 use std::sync::mpsc;
 use regex::Regex;
 use sled::Config;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+#[cfg(windows)]
+use std::os::windows::process::ExitStatusExt;
 
 mod scan;
 
@@ -112,6 +115,7 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
+
 fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: bool) -> io::Result<bool> {
     // Create command to execute mxfdump.exe
     let mut cmd = Command::new("./bin/mxfdump.exe");
@@ -121,6 +125,13 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     
+    // On Windows, set creation flags to allow clean process termination
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP
+    }
+    
     // Spawn the process
     let mut child = cmd.spawn()?;
     
@@ -128,57 +139,59 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
     let stdout = child.stdout.take().expect("Failed to capture stdout");
     let stderr = child.stderr.take().expect("Failed to capture stderr");
     
-    // Create regex pattern for matching Origin or Precharge
+    // Create regex patterns
     let pattern = r"\[ k = Origin\s+\r?\n?4b\.02, l =\s+\d+\s+\(\d+\) \]\s+\r?\n?\s+\d+\s+([0-9a-fA-F]{2}(?: [0-9a-fA-F]{2}){7})";
     let regex = Regex::new(pattern).expect("Invalid regex pattern");
     
-    // Create regex pattern for matching audio file
     let mxf_opatom_pattern = r"Operational\s+Pattern\s+=\s+06.0e.2b.34.04.01.01.02.0d.01.02.01.10.02.00.00";
     let audio_opatom_regex = Regex::new(mxf_opatom_pattern).expect("Invalid regex pattern");
     let mxf_one_container = r"EssenceContainers\s+=\s+\[\s+count\s+=\s+1\s+\]";
     let audio_container_regex = Regex::new(mxf_one_container).expect("Invalid regex pattern");
     
-    // Create a channel to communicate matches
-    let (tx, rx) = mpsc::channel();
+    // Create channel for results and atomic bool for kill signal
+    let (result_tx, result_rx) = mpsc::channel();
+    let should_kill = Arc::new(AtomicBool::new(false));
     
-    // Process stdout in a separate thread - using chunk-based reading for memory efficiency
+    // Process stdout in a separate thread
+    let stdout_result_tx = result_tx.clone();
+    let stdout_should_kill = should_kill.clone();
     thread::spawn(move || {
         let mut reader = BufReader::with_capacity(BUFFER_SIZE, stdout);
         let mut buffer = vec![0; BUFFER_SIZE];
         let mut window = Vec::with_capacity(WINDOW_SIZE);
         let mut counter: u32 = 0;
 
-        // Read in chunks to minimize memory usage
         'outer: loop {
+            // Check if we should terminate
+            if stdout_should_kill.load(Ordering::Relaxed) {
+                break 'outer;
+            }
+            
             match reader.read(&mut buffer) {
-                Ok(0) => break, // End of file
+                Ok(0) => break 'outer, // End of file
                 Ok(n) => {
                     // Append new data to the sliding window
                     window.extend_from_slice(&buffer[0..n]);
-                    println!("I'm here in the top of the match Ok(n)");
                     
-                    // Convert to string for regex matching (for this portion)
+                    // Convert to string for regex matching
                     if let Ok(text) = String::from_utf8(window.clone()) {
-                        println!("Am i going here ?");
                         if counter == 0 {
-                            // Check if it is an audio file match
-                            println!("I'm in the audio check Counter: {counter}");
+                            // Check if it is an audio file
                             if !is_video_file(&text, &audio_container_regex, &audio_opatom_regex) {
-                              //terminate Mxfdump.exe
-                                println!("Stopping MXFDump\n");
-                                let should_kill = true;
-                                tx.send(should_kill).expect("Failed to send the message");
+                                println!("Audio file detected, stopping MXFDump");
+                                // Signal to kill the process
+                                stdout_should_kill.store(true, Ordering::Relaxed);
+                                // Send result indicating we should skip this file
+                                let _ = stdout_result_tx.send(false);
                                 break 'outer;
-                              } else {
-                                  println!("Cool this is a video file");
-                              }
+                            }
                         }
                         
                         // Check for match
                         if is_valid_mxf_dump_chunk(&text, &regex) {
-                            println!("I'm has a match");
-                            tx.send(true).unwrap_or(());
-                            return;
+                            println!("Found Origin/Precharge pattern");
+                            let _ = stdout_result_tx.send(true);
+                            break 'outer;
                         }
 
                         // Output if verbose
@@ -187,63 +200,92 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
                         }
                     }
                     
-                    // Trim the window if it's too large, keeping only the tail
+                    // Trim the window if it's too large
                     if window.len() > WINDOW_SIZE {
                         window = window.split_off(window.len() - WINDOW_SIZE);
                     }
                     counter += 1;
-                    println!("Counter: {counter}");
                 }
                 Err(e) => {
                     if verbose {
                         eprintln!("Error reading stdout: {}", e);
                     }
-                    break;
+                    break 'outer;
                 }
             }
         }
         
-        // No match found
-        tx.send(false).unwrap_or(());
+        // If we get here without sending a result, send false
+        let _ = stdout_result_tx.send(false);
     });
 
-    if let Ok(should_kill) = rx.recv() {
-        if should_kill {
-           let _ =  &child.kill().expect("Couldn't kill MXFDump.exe");
-        } else {
-            // Always just drain stderr without checking for regex patterns
-            thread::spawn(move || {
-                let mut reader = BufReader::with_capacity(BUFFER_SIZE, stderr);
-                let mut buffer = vec![0; BUFFER_SIZE];
-                
-                loop {
-                    match reader.read(&mut buffer) {
-                        Ok(0) => break, // End of file
-                        Ok(n) => {
-                            if verbose && process_errors {
-                                eprint!("{}", String::from_utf8_lossy(&buffer[0..n]));
-                            }
-                        }
-                        Err(e) => {
-                            if verbose {
-                                eprintln!("Error reading stderr: {}", e);
-                            }
-                            break;
-                        }
+    // Process stderr in a separate thread
+    let stderr_should_kill = should_kill.clone();
+    thread::spawn(move || {
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, stderr);
+        let mut buffer = vec![0; BUFFER_SIZE];
+        
+        loop {
+            // Check if we should terminate
+            if stderr_should_kill.load(Ordering::Relaxed) {
+                break;
+            }
+            
+            match reader.read(&mut buffer) {
+                Ok(0) => break, // End of file
+                Ok(n) => {
+                    if verbose && process_errors {
+                        eprint!("{}", String::from_utf8_lossy(&buffer[0..n]));
                     }
                 }
-            });
+                Err(_) => break,
+            }
+        }
+    });
+    
+    // Wait for either a result or a timeout
+    let found_match = match result_rx.recv_timeout(std::time::Duration::from_secs(30)) {
+        Ok(result) => {
+            // If we got a kill signal, terminate the process
+            if should_kill.load(Ordering::Relaxed) {
+                let _ = child.kill();
+            }
+            result
+        }
+        Err(_) => {
+            // Timeout - kill the process and return false
+            println!("Process timed out after 30 seconds, killing MXFDump");
+            should_kill.store(true, Ordering::Relaxed);
+            let _ = child.kill();
+            false
+        }
+    };
+    
+    // Wait for the process to complete (with timeout)
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            if verbose {
+                println!("Process exit status: {}", status);
+            }
+        }
+        Ok(None) => {
+            // Process is still running, kill it forcefully on Windows
+            if verbose {
+                println!("Force killing process...");
+            }
+            let _ = child.kill();
+            // Give it a moment to die gracefully
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = child.wait();
+        }
+        Err(e) => {
+            if verbose {
+                eprintln!("Error checking process status: {}", e);
+            }
+            let _ = child.kill();
+            let _ = child.wait();
         }
     }
-    
-    // Wait for the process to complete
-    let status = child.wait()?;
-    if verbose {
-        println!("Process exit status: {}", status);
-    }
-    
-    // Get the result from the stdout processing thread
-    let found_match = rx.recv().unwrap_or(false);
     
     Ok(found_match)
 }
