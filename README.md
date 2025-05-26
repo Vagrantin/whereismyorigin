@@ -166,7 +166,7 @@ Use `--verbose` flag to get detailed information about:
 
 GPLv3
 
-## 3rd License
+## 3rd party License
 
 MXFDump is under is not license by this tool and handle by the creator and the BBC maintaining the MXFDump tool it is provided as-is without guarantee.
 
