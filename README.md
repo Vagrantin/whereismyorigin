@@ -9,6 +9,7 @@ This tool performs a two-phase analysis of MXF files:
 
 1. **Directory Scan**: Recursively scans a specified directory for `.mxf` files and stores their paths in a local database
 2. **Pattern Analysis**: Processes each MXF file using `mxfdump.exe` to detect specific Origin/Precharge patterns in the metadata
+3. **Report**: Output the list of files that have been identified has having Origin/Precharge pattern.
 
 The tool is designed to handle large collections of MXF files hopefully efficiently and audio file filtering.
 
