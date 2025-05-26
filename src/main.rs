@@ -27,6 +27,7 @@ fn main() -> io::Result<()> {
     if args.len() < 2 {
         eprintln!("Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]", args[0]);
         eprintln!("       {} --report (to generate report only)", args[0]);
+        eprintln!("Author: Matthieu Ducorps");
         return Ok(());
     }
     

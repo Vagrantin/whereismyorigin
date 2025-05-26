@@ -1,4 +1,5 @@
 # MXF File Analyzer
+Author: Matthieu Ducorps
 
 A Rust command-line tool for scanning directories containing MXF (Material eXchange Format) video files and analyzing them to identify if there is Origin/Precharge patterns using the mxfdump utility.
 
@@ -164,3 +165,9 @@ Use `--verbose` flag to get detailed information about:
 ## License
 
 GPLv3
+
+## 3rd License
+
+MXFDump is under is not license by this tool and handle by the creator and the BBC maintaining the MXFDump tool it is provided as-is without guarantee.
+
+
