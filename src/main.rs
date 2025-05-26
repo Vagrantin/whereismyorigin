@@ -6,8 +6,10 @@ use std::sync::mpsc;
 use regex::Regex;
 use sled::Config;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+/*
 #[cfg(windows)]
 use std::os::windows::process::ExitStatusExt;
+*/
 
 mod scan;
 
@@ -81,7 +83,7 @@ fn main() -> io::Result<()> {
                     if verbose {
                         println!("This is the path I got: {}", &videofilepath);
                     } else if processed_count % 5 == 0 {
-                        println!("Processed {} files so far...", processed_count);
+                        println!("Processed {} files so far...", processed_count - 1);
                     }
                     
                     println!("Processing {}", &videofilepath);
