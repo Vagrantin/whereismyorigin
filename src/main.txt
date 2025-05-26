@@ -133,10 +133,8 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
     let regex = Regex::new(pattern).expect("Invalid regex pattern");
     
     // Create regex pattern for matching audio file
-    let mxf_opatom_pattern = r"Operational\s+Pattern\s+=\s+06.0e.2b.34.04.01.01.02.0d.01.02.01.10.02.00.00";
-    let audio_opatom_regex = Regex::new(mxf_opatom_pattern).expect("Invalid regex pattern");
-    let mxf_one_container = r"EssenceContainers\s+=\s+\[\s+count\s+=\s+1\s+\]";
-    let audio_container_regex = Regex::new(mxf_one_container).expect("Invalid regex pattern");
+    let audio_pattern = r"EssenceContainers = \[ count = \s*\d+ \]\s*0 = 06\.0e\.2b\.34\.04\.01\.[0-9a-fA-F\.]{24}";
+    let audio_regex = Regex::new(audio_pattern).expect("Invalid regex pattern");
     
     // Create a channel to communicate matches
     let (tx, rx) = mpsc::channel();
@@ -146,53 +144,46 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
         let mut reader = BufReader::with_capacity(BUFFER_SIZE, stdout);
         let mut buffer = vec![0; BUFFER_SIZE];
         let mut window = Vec::with_capacity(WINDOW_SIZE);
-        let mut counter: u32 = 0;
-
+        
         // Read in chunks to minimize memory usage
-        'outer: loop {
+        loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break, // End of file
                 Ok(n) => {
                     // Append new data to the sliding window
                     window.extend_from_slice(&buffer[0..n]);
-                    println!("I'm here in the top of the match Ok(n)");
                     
                     // Convert to string for regex matching (for this portion)
                     if let Ok(text) = String::from_utf8(window.clone()) {
-                        println!("Am i going here ?");
-                        if counter == 0 {
-                            // Check if it is an audio file match
-                            println!("I'm in the audio check Counter: {counter}");
-                            if !is_video_file(&text, &audio_container_regex, &audio_opatom_regex) {
-                              //terminate Mxfdump.exe
-                                println!("Stopping MXFDump\n");
-                                let should_kill = true;
-                                tx.send(should_kill).expect("Failed to send the message");
-                                break 'outer;
-                              } else {
-                                  println!("Cool this is a video file");
-                              }
-                        }
-                        
-                        // Check for match
-                        if is_valid_mxf_dump_chunk(&text, &regex) {
-                            println!("I'm has a match");
-                            tx.send(true).unwrap_or(());
-                            return;
-                        }
-
                         // Output if verbose
                         if verbose {
                             print!("{}", String::from_utf8_lossy(&buffer[0..n]));
                         }
+                        
+                        // Check for match
+                        if is_video_file(&text, &audio_regex) {
+                         if is_valid_mxf_dump_chunk(&text,&regex) {
+                          tx.send(true).unwrap_or(());
+                          return;
+                          }
+                        } else {
+                          //terminate gracefully Mxfdump.exe
+                          &child.kill().expect("Couldn't kill MXFDump.exe");
+                          break;
+                          }
+                       /* 
+                        // Check for match
+                        if is_valid_mxf_dump_chunk(&text, &regex) {
+                            tx.send(true).unwrap_or(());
+                            return;
+                        }
+                        */
                     }
                     
                     // Trim the window if it's too large, keeping only the tail
                     if window.len() > WINDOW_SIZE {
                         window = window.split_off(window.len() - WINDOW_SIZE);
                     }
-                    counter += 1;
-                    println!("Counter: {counter}");
                 }
                 Err(e) => {
                     if verbose {
@@ -206,35 +197,29 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
         // No match found
         tx.send(false).unwrap_or(());
     });
-
-    if let Ok(should_kill) = rx.recv() {
-        if should_kill {
-           let _ =  &child.kill().expect("Couldn't kill MXFDump.exe");
-        } else {
-            // Always just drain stderr without checking for regex patterns
-            thread::spawn(move || {
-                let mut reader = BufReader::with_capacity(BUFFER_SIZE, stderr);
-                let mut buffer = vec![0; BUFFER_SIZE];
-                
-                loop {
-                    match reader.read(&mut buffer) {
-                        Ok(0) => break, // End of file
-                        Ok(n) => {
-                            if verbose && process_errors {
-                                eprint!("{}", String::from_utf8_lossy(&buffer[0..n]));
-                            }
-                        }
-                        Err(e) => {
-                            if verbose {
-                                eprintln!("Error reading stderr: {}", e);
-                            }
-                            break;
-                        }
+    
+    // Always just drain stderr without checking for regex patterns
+    thread::spawn(move || {
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, stderr);
+        let mut buffer = vec![0; BUFFER_SIZE];
+        
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break, // End of file
+                Ok(n) => {
+                    if verbose && process_errors {
+                        eprint!("{}", String::from_utf8_lossy(&buffer[0..n]));
                     }
                 }
-            });
+                Err(e) => {
+                    if verbose {
+                        eprintln!("Error reading stderr: {}", e);
+                    }
+                    break;
+                }
+            }
         }
-    }
+    });
     
     // Wait for the process to complete
     let status = child.wait()?;
@@ -283,17 +268,22 @@ fn is_valid_mxf_dump_chunk(mxf_dump_chunk: &str, regex: &Regex) -> bool {
     false // No match found at all
 }
 
-fn is_video_file(mxf_dump_chunk: &str, audio_container_regex: &Regex, audio_opatom_regex: &Regex) -> bool {
+fn is_video_file(mxf_dump_chunk:&str, regex_audio: &Regex) -> bool {
 
-    if let Some(_captures) = audio_opatom_regex.captures(mxf_dump_chunk) {
-        if let Some(_captures) = audio_container_regex.captures(mxf_dump_chunk) {
-            println!("this is an audio file we skip it.");
-            return false;
-        } else {
-            return true;
-        } 
+    //look in chunk 
+    //As soon as audio pattern is found return false
+    //As soon as video pattern is found return true
+    //match(mxf_dump_chunk) {
+    //  Ok(audio) => return false;
+    //  Ok(video) => return true;
+    //  Err(_) => {
+    //    eprintln!("This is not a video nor an audio file");
+    //    }
+    if let Some(_captures) = regex_audio.captures(mxf_dump_chunk) {
+        println!("this is an audio file we skip it.");
+        return false;
     } else {
-        return true;
+        return true
     }
 }
 
