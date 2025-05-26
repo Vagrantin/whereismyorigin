@@ -1,5 +1,5 @@
 use std::env;
-use std::process::{Command, Stdio};
+use std::process::{self,Command, Stdio};
 use std::io::{self, Read, BufReader};
 use std::thread;
 use std::sync::mpsc;
@@ -12,6 +12,7 @@ use std::os::windows::process::ExitStatusExt;
 */
 
 mod scan;
+mod report;
 
 // Size of buffer for reading (smaller chunks to avoid memory issues)
 const BUFFER_SIZE: usize = 8192;
@@ -25,14 +26,16 @@ fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]", args[0]);
+        eprintln!("       {} . --report (to generate report only)", args[0]);
         return Ok(());
     }
     
     let videofolderpath = &args[1];
     let mut verbose = false;
     let mut mxferror = false;
+    let mut report_mode = false;
     
-    let mut i = 2;
+    let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "-v" | "--verbose" => {
@@ -43,10 +46,27 @@ fn main() -> io::Result<()> {
                 mxferror = true;
                 i+=1;
             }
+            "--report" => {
+                report_mode = true;
+                i+=1;
+            }
             _ => {
                 i+=1;
             }
         }
+    }
+
+    //Check for conflicting parameters
+    if report_mode && (verbose || mxferror) {
+        eprintln!("Report mode cannot be use with other parameters");
+        eprintln!("Usage for report: {} . --report", args[0]);
+        process::exit(0);
+    }
+
+    if report_mode {
+        println!("Generating report of files with Origin/Precharge");
+        let _ = report::generate_report();
+        process::exit(0);
     }
             
     println!("Running the folder scan for MXF files...");
