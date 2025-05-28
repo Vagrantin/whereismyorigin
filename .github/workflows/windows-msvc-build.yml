@@ -39,7 +39,7 @@ jobs:
 
       - name: Strip and compress binary
         run: |
-          C:\\msys64\\mingw64\\bin\\strip.exe" target/x86_64-pc-windows-msvc/release/whereismyorigin.exe
+          C:\\msys64\\mingw64\\bin\\strip.exe target/x86_64-pc-windows-msvc/release/whereismyorigin.exe
           ./upx/upx-4.2.1-win64/upx.exe --best --lzma target/x86_64-pc-windows-msvc/release/whereismyorigin.exe
         shell: bash
         
