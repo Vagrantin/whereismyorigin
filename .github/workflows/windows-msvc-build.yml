@@ -22,8 +22,26 @@ jobs:
           target: x86_64-pc-windows-msvc
           override: true
 
+      - name: Install MSYS2 and MinGW for strip
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: mingw-w64-x86_64-binutils
+
       - name: Build release binary for Windows (MSVC)
         run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Download and extract UPX
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/latest/download/upx-4.2.1-win64.zip" -OutFile "upx.zip"
+          Expand-Archive -Path "upx.zip" -DestinationPath "upx"
+        shell: powershell
+
+      - name: Strip and compress binary
+        run: |
+          C:\msys64\mingw64\bin\strip.exe target/x86_64-pc-windows-msvc/release/whereismyorigin.exe
+          ./upx/upx-4.2.1-win64/upx.exe --best --lzma target/x86_64-pc-windows-msvc/release/whereismyorigin.exe
+        shell: bash
         
       - name: Create GitHub Release
         id: create_release
