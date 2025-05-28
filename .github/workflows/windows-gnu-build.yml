@@ -21,14 +21,16 @@ jobs:
           rustup default stable
           rustup target add x86_64-pc-windows-gnu
 
-      - name: Install MinGW (for linking)
+      - name: Install MinGW and tools
         run: |
           sudo apt update
-          sudo apt install -y gcc-mingw-w64 binutils-mingw-w64
+          sudo apt install -y gcc-mingw-w64 binutils-mingw-w64 mingw-w64
 
-      - name: Set up windres
+      - name: Set environment for MinGW tools
         run: |
-          sudo apt install -y mingw-w64
+          echo "AR=x86_64-w64-mingw32-ar" >> $GITHUB_ENV
+          echo "WINDRES=x86_64-w64-mingw32-windres" >> $GITHUB_ENV
+          echo "CC=x86_64-w64-mingw32-gcc" >> $GITHUB_ENV
 
       - name: Build for Windows
         env:
@@ -41,3 +43,4 @@ jobs:
         with:
           name: whereismyorigin-windows
           path: target/x86_64-pc-windows-gnu/release/whereismyorigin.exe
+
