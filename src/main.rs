@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::env;
 use std::process::{self,Command, Stdio};
 use std::io::{self, Read, BufReader};
@@ -70,6 +71,7 @@ fn main() -> io::Result<()> {
         process::exit(0);
     }
             
+    println!("Dalet - Matthieu Ducorps");
     println!("Running the folder scan for MXF files...");
     scan::scandir(videofolderpath, verbose);
 
@@ -166,6 +168,7 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
     let pattern = r"\[ k = Origin\s+\r?\n?4b\.02, l =\s+\d+\s+\(\d+\) \]\s+\r?\n?\s+\d+\s+([0-9a-fA-F]{2}(?: [0-9a-fA-F]{2}){7})";
     let regex = Regex::new(pattern).expect("Invalid regex pattern");
     
+    let file_path_clone = file_path.to_string();
     let mxf_opatom_pattern = r"Operational\s+Pattern\s+=\s+06.0e.2b.34.04.01.01.02.0d.01.02.01.10.02.00.00";
     let audio_opatom_regex = Regex::new(mxf_opatom_pattern).expect("Invalid regex pattern");
     let mxf_one_container = r"EssenceContainers\s+=\s+\[\s+count\s+=\s+1\s+\]";
@@ -200,7 +203,7 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
                     if let Ok(text) = String::from_utf8(window.clone()) {
                         if counter == 0 {
                             // Check if it is an audio file
-                            if !is_video_file(&text, &audio_container_regex, &audio_opatom_regex) {
+                            if !is_video_file(&text, &file_path_clone, &audio_container_regex, &audio_opatom_regex) {
                                 println!("Audio file detected, stopping MXFDump");
                                 // Signal to kill the process
                                 stdout_should_kill.store(true, Ordering::Relaxed);
@@ -267,7 +270,7 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
     });
     
     // Wait for either a result or a timeout
-    let found_match = match result_rx.recv_timeout(std::time::Duration::from_secs(30)) {
+    let found_match = match result_rx.recv_timeout(std::time::Duration::from_secs(60)) {
         Ok(result) => {
             // If we got a kill signal, terminate the process
             if should_kill.load(Ordering::Relaxed) {
@@ -277,7 +280,7 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
         }
         Err(_) => {
             // Timeout - kill the process and return false
-            println!("Process timed out after 30 seconds, killing MXFDump");
+            println!("Process timed out after 60 seconds, killing MXFDump");
             should_kill.store(true, Ordering::Relaxed);
             let _ = child.kill();
             false
@@ -348,12 +351,22 @@ fn is_valid_mxf_dump_chunk(mxf_dump_chunk: &str, regex: &Regex) -> bool {
     false // No match found at all
 }
 
-fn is_video_file(mxf_dump_chunk: &str, audio_container_regex: &Regex, audio_opatom_regex: &Regex) -> bool {
+fn is_video_file(mxf_dump_chunk: &str, file_path_clone: &str, audio_container_regex: &Regex, audio_opatom_regex: &Regex) -> bool {
+    
+    let filename = Path::new(file_path_clone)
+        .file_name()
+        .and_then(|os_str| os_str.to_str())
+        .unwrap_or("");
+    //println!("{filename}");
 
     if let Some(_captures) = audio_opatom_regex.captures(mxf_dump_chunk) {
         if let Some(_captures) = audio_container_regex.captures(mxf_dump_chunk) {
-            println!("this is an audio file we skip it.");
-            return false;
+            if filename.contains("A0") {
+                println!("this is an audio file we skip it.");
+                return false;
+            } else {
+                return true;
+            }
         } else {
             return true;
         } 
