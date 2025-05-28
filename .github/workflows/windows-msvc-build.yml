@@ -39,9 +39,9 @@ jobs:
 
       - name: Strip and compress binary
         run: |
-          C:\\msys64\\mingw64\\bin\\strip.exe target/x86_64-pc-windows-msvc/release/whereismyorigin.exe
-          ./upx/upx-4.2.1-win64/upx.exe --best --lzma target/x86_64-pc-windows-msvc/release/whereismyorigin.exe
-        shell: bash
+          strip target/x86_64-pc-windows-msvc/release/whereismyorigin.exe
+          ./upx/upx-5.0.1-win64/upx.exe --best --lzma target/x86_64-pc-windows-msvc/release/whereismyorigin.exe
+        shell: msys2 {0} 
         
       - name: Create GitHub Release
         id: create_release
