@@ -33,7 +33,7 @@ jobs:
 
       - name: Download and extract UPX
         run: |
-          Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/latest/download/upx-4.2.1-win64.zip" -OutFile "upx.zip"
+          Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v5.0.1/upx-5.0.1-win64.zip" -OutFile "upx.zip"
           Expand-Archive -Path "upx.zip" -DestinationPath "upx"
         shell: powershell
 
