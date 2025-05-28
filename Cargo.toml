@@ -14,4 +14,4 @@ sled = "0.34.7"
 walkdir = "2.5.0"
 
 [build-dependencies]
-winres = "0.1"
+winresource = "0.1"
