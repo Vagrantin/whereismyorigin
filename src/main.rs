@@ -26,9 +26,9 @@ fn main() -> io::Result<()> {
     // Get command line arguments, excluding the program name
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
+        eprintln!("Author: Matthieu Ducorps");
         eprintln!("Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]", args[0]);
         eprintln!("       {} --report (to generate report only)", args[0]);
-        eprintln!("Author: Matthieu Ducorps");
         return Ok(());
     }
     
@@ -51,6 +51,12 @@ fn main() -> io::Result<()> {
             "--report" => {
                 report_mode = true;
                 i+=1;
+            }
+            "-h" | "--help" => {
+                println!("Author: Matthieu Ducorps");
+                println!("Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]", args[0]);
+                println!("       {} --report (to generate report only)", args[0]);
+                process::exit(0);
             }
             _ => {
                 i+=1;
@@ -150,15 +156,23 @@ fn process_file_with_mxfdump(file_path: &str, verbose: bool, process_errors: boo
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     
-    // On Windows, set creation flags to allow clean process termination
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP
-    }
-    
     // Spawn the process
-    let mut child = cmd.spawn()?;
+    //let mut child = cmd.spawn().expect("Couldn't start MXFDump.exe tool, is it available in the bin folder?\n");
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            if verbose {
+                eprintln!("Error: Couldn't start MXFDump.exe - {}", e);
+                eprintln!("Please ensure MXFDump.exe is available in the ./bin/ folder");
+                return Err(e);
+            } else {
+                eprintln!("Error: Couldn't start MXFDump.exe");
+                eprintln!("Please ensure MXFDump.exe is available in the ./bin/ folder");
+                return Err(e);
+            }
+        }
+    };
+
     
     // Extract stdout and stderr handles
     let stdout = child.stdout.take().expect("Failed to capture stdout");

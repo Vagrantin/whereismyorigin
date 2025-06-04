@@ -50,6 +50,7 @@ whereismyorigin <video_folder_path> [OPTIONS]
 
 ### Options
 
+- `-h, --help` - show help/usage menu 
 - `-v, --verbose` - Enable verbose output showing detailed processing information
 - `-e, --errors` - Enable error output from mxfdump processes
 - `--report` - Generate a report of files with Origin/Precharge patterns found (cannot be used with other options)
