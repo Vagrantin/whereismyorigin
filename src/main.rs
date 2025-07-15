@@ -202,7 +202,6 @@ fn process_file_with_mxfdump(
     cmd.stderr(Stdio::piped());
 
     // Spawn the process
-    //let mut child = cmd.spawn().expect("Couldn't start MXFDump.exe tool, is it available in the bin folder?\n");
     let mut child = match cmd.spawn() {
         Ok(child) => child,
         Err(e) => {
@@ -334,25 +333,26 @@ fn process_file_with_mxfdump(
     });
 
     // Wait for either a result or a timeout
-    let found_match =
-        match result_rx.recv_timeout(std::time::Duration::from_secs(timeout_minutes * 60)) {
-            Ok(result) => {
-                // If we got a kill signal, terminate the process
-                if should_kill.load(Ordering::Relaxed) {
-                    let _ = child.kill();
-                }
-                result
-            }
-            Err(_) => {
-                // Timeout - kill the process and return false
-                println!(
-                    "Couldn't find the pattern after {timeout_minutes} minute(s), stopping MXFDump"
-                );
-                should_kill.store(true, Ordering::Relaxed);
+    let found_match = match result_rx
+        .recv_timeout(std::time::Duration::from_secs(timeout_minutes * 60))
+    {
+        Ok(result) => {
+            // If we got a kill signal, terminate the process
+            if should_kill.load(Ordering::Relaxed) {
                 let _ = child.kill();
-                false
             }
-        };
+            result
+        }
+        Err(_) => {
+            // Timeout - kill the process and return false
+            println!(
+                    "Couldn't find the pattern after scanning the file for {timeout_minutes} minute(s), stopping MXFDump"
+                );
+            should_kill.store(true, Ordering::Relaxed);
+            let _ = child.kill();
+            false
+        }
+    };
 
     // Wait for the process to complete (with timeout)
     match child.try_wait() {
