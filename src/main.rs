@@ -29,13 +29,14 @@ fn main() -> io::Result<()> {
 
     // Get command line arguments, excluding the program name
     if args.len() < 2 {
-        eprintln!("Author: Matthieu Ducorps");
+        eprintln!("Author: Matthieu Ducorps\n");
+        eprintln!("Version: 1.2\n");
         eprintln!(
-            "Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]",
+            "Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]\n",
             args[0]
         );
         eprintln!(
-            "       {} --timeout (to change timeout value in minutes default is {timeout} minute)",
+            "       {} --timeout (to change timeout value in minutes default is {timeout} minute)\n",
             args[0]
         );
         eprintln!("       {} --report (to generate report only)", args[0]);
@@ -76,17 +77,18 @@ fn main() -> io::Result<()> {
                         }
                     }
                 } else {
-                    eprintln!("Error: --tiemout requeres a value in munutes");
+                    eprintln!("Error: --timeout requires a value in minutes");
                     process::exit(1);
                 }
             }
             "-h" | "--help" => {
-                println!("Author: Matthieu Ducorps");
+                println!("Author: Matthieu Ducorps\n");
+                println!("Version: 1.2\n");
                 println!(
-                    "Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]",
+                    "Usage: {} <video_folder_path> [-v|--verbose] [-e|--errors]\n",
                     args[0]
                 );
-                println!("       {} --timeout ( to change timeout value in minutes default is {timeout} minute", args[0]);
+                println!("       {} --timeout ( to change timeout value in minutes default is {timeout} minute\n", args[0]);
                 println!("       {} --report (to generate report only)", args[0]);
                 process::exit(0);
             }
@@ -343,7 +345,9 @@ fn process_file_with_mxfdump(
             }
             Err(_) => {
                 // Timeout - kill the process and return false
-                println!("Process timed out after {timeout_minutes} minute(s), killing MXFDump");
+                println!(
+                    "Couldn't find the pattern after {timeout_minutes} minute(s), stopping MXFDump"
+                );
                 should_kill.store(true, Ordering::Relaxed);
                 let _ = child.kill();
                 false
@@ -360,7 +364,7 @@ fn process_file_with_mxfdump(
         Ok(None) => {
             // Process is still running, kill it forcefully on Windows
             if verbose {
-                println!("Force killing process...");
+                println!("Force closing process...");
             }
             let _ = child.kill();
             // Give it a moment to die gracefully
