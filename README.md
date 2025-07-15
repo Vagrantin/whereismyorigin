@@ -34,7 +34,7 @@ The tool is designed to handle large collections of MXF files hopefully efficien
 The tool relies on several Rust crates:
 
 - `sled` - Embedded database for file path storage
-- `regex` - Pattern matching for metadata analysis  
+- `regex` - Pattern matching for metadata analysis
 - `walkdir` - Recursive directory traversal
 - `base64` - File path encoding for database keys
 
@@ -50,9 +50,10 @@ whereismyorigin <video_folder_path> [OPTIONS]
 
 ### Options
 
-- `-h, --help` - show help/usage menu 
+- `-h, --help` - show help/usage menu
 - `-v, --verbose` - Enable verbose output showing detailed processing information
 - `-e, --errors` - Enable error output from mxfdump processes
+- `--timeout <minutes>` - Set timeout for mxfdump processes in minutes (default: 1 minute)
 - `--report` - Generate a report of files with Origin/Precharge patterns found (cannot be used with other options)
 
 ### Examples
@@ -66,6 +67,12 @@ whereismyorigin C:\Videos\MXF_Collection --verbose
 
 # With verbose output and error reporting
 whereismyorigin C:\Videos\MXF_Collection --verbose --errors
+
+# Set custom timeout to 5 minutes
+whereismyorigin C:\Videos\MXF_Collection --timeout 5
+
+# With verbose output and custom timeout
+whereismyorigin C:\Videos\MXF_Collection --verbose --timeout 10
 
 # Generate report of files with patterns found
 whereismyorigin --report
@@ -89,7 +96,7 @@ For each MXF file found:
 3. First checks if the file is audio-only (skips if true)
 4. Searches for Origin/Precharge pattern using regex
 5. Updates the database with results
-6. Handles process timeouts (30 seconds) and cleanup
+6. Handles process timeouts (configurable, default 1 minute) and cleanup
 
 ### Pattern Detection
 
@@ -99,13 +106,13 @@ The tool searches for this specific pattern in mxfdump output:
 \[ k = Origin\s+\r?\n?4b\.02, l =\s+\d+\s+\(\d+\) \]\s+\r?\n?\s+\d+\s+([0-9a-fA-F]{2}(?: [0-9a-fA-F]{2}){7})
 ```
 
-This pattern identifies Origin metadata with non-zero hexadecimal values  
+This pattern identifies Origin metadata with non-zero hexadecimal values
 meaning there is frames in the "Origin" metadata, filtering out empty/zero patterns.
 
 ### Audio File Detection
 
 Audio-only MXF files are identified by these patterns:
-- Identify if the MXF is an OpAtom: `Operational Pattern: 06.0e.2b.34.04.01.01.02.0d.01.02.01.10.02.00.00`
+- Identify if the MXF is an OpAtom: `Operational Pattern: 06.0e.2b.34.04.01.01.02.0d.01.02.01.10.02.00.00`
 - Check if the MXF has only one essence container
 
 ## Output
@@ -121,7 +128,7 @@ The tool provides:
 
 - Uses streaming buffer processing to handle large mxfdump outputs
 - Implements sliding window technique for efficient regex matching
-- Process timeout prevents hanging on problematic files
+- Process timeout prevents hanging on problematic files (configurable via --timeout)
 - Database prevents re-processing files in subsequent runs
 - Multi-threaded design for concurrent stdout/stderr processing
 
@@ -153,7 +160,7 @@ cargo build --release
 
 1. **"mxfdump.exe not found"**: Ensure `mxfdump.exe` is placed in `./bin/` directory
 2. **Permission errors**: Run with appropriate file system permissions
-3. **Process timeouts**: Some large MXF files may require longer processing times
+3. **Process timeouts**: Some large MXF files may require longer processing times - use `--timeout` to increase the timeout duration
 4. **Database errors**: Delete `file_paths_db` directory to reset the database
 
 ### Verbose Mode
@@ -164,6 +171,14 @@ Use `--verbose` flag to get detailed information about:
 - Pattern matching results
 - Process exit statuses
 
+### Timeout Configuration
+
+The `--timeout` parameter allows you to configure how long the tool will wait for mxfdump to process each file:
+- Default timeout is 1 minute
+- Specify timeout in minutes (e.g., `--timeout 5` for 5 minutes)
+- Larger or more complex MXF files may require longer timeouts
+- If a file consistently times out, it may indicate a problem with the file or mxfdump process
+
 ## License
 
 GPLv3
@@ -171,5 +186,3 @@ GPLv3
 ## 3rd party License
 
 MXFDump is under is not license by this tool and handle by the creator and the BBC maintaining the MXFDump tool it is provided as-is without guarantee.
-
-
