@@ -25,11 +25,6 @@ const WINDOW_SIZE: usize = 512;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
-    let mut videofilepath: String;
-    let videofolderpath = &args[1];
-    let mut verbose = false;
-    let mut mxferror = false;
-    let mut report_mode = false;
     let mut timeout = 1;
 
     // Get command line arguments, excluding the program name
@@ -46,6 +41,12 @@ fn main() -> io::Result<()> {
         eprintln!("       {} --report (to generate report only)", args[0]);
         return Ok(());
     }
+
+    let mut videofilepath: String;
+    let videofolderpath = &args[1];
+    let mut verbose = false;
+    let mut mxferror = false;
+    let mut report_mode = false;
 
     let mut i = 1;
     while i < args.len() {
