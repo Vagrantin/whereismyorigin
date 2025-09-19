@@ -71,7 +71,7 @@ fn scan_directory(dir: &Path, tx: mpsc::Sender<PathBuf>) {
     for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
         if entry.file_type().is_file() {
             let path = entry.path().to_path_buf();
-            if path.extension().and_then(|s| s.to_str()) == Some("mxf") {
+            if path.extension().and_then(|s| Some(s.to_str().unwrap().to_lowercase())) == Some("mxf".to_string()) {
                 tx.send(path).unwrap();
             }
         }
